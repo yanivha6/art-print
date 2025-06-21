@@ -1,0 +1,82 @@
+/* Hebrew RTL and Typography Support */
+@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&family=Heebo:wght@300;400;500;600;700&display=swap');
+
+/* RTL Support */
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] * {
+  direction: rtl;
+}
+
+/* Hebrew Typography */
+.hebrew-text {
+  font-family: 'Assistant', 'Heebo', 'Segoe UI', Tahoma, Arial, sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+
+/* Global RTL Adjustments */
+[dir="rtl"] .container {
+  padding-right: 1rem;
+  padding-left: 1rem;
+}
+
+[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+[dir="rtl"] .text-right {
+  text-align: left;
+}
+
+[dir="rtl"] .float-left {
+  float: right;
+}
+
+[dir="rtl"] .float-right {
+  float: left;
+}
+
+/* Button RTL */
+[dir="rtl"] .btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: 'Assistant', sans-serif;
+  font-weight: 500;
+}
+
+/* Form RTL */
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+  text-align: right;
+  direction: rtl;
+  font-family: 'Assistant', sans-serif;
+}
+
+[dir="rtl"] label {
+  text-align: right;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+/* Flexbox RTL */
+[dir="rtl"] .flex-row-reverse {
+  flex-direction: row-reverse;
+}
+
+/* Grid RTL adjustments */
+[dir="rtl"] .grid {
+  direction: ltr;
+}
+
+[dir="rtl"] .grid > * {
+  direction: rtl;
+}
