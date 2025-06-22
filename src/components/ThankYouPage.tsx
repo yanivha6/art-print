@@ -172,7 +172,7 @@ const ThankYouPage = () => {
                     paddingTop: '0.5rem',
                     borderTop: '1px solid #d1d5db'
                   }}>
-                    <strong>מחיר:</strong> {formatPrice(order.orderDetails.price)}
+                    <strong>מחיר:</strong> {formatPrice(order.orderDetails.totalPrice)}
                   </div>
                 </div>
               </div>

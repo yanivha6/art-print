@@ -1,48 +1,88 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { validateCanvasSize, calculateDefaultSize, calculateDimensionFromOther, constrainSize } from '../utils/sizeValidator';
-import { calculatePrice, formatPrice } from '../utils/priceCalculator';
-import type { ImageFile, CanvasSize } from '../types/order';
+import { calculateTotalPrice, formatPrice } from '../utils/priceCalculator';
+import { FEATURE_FLAGS, CANVAS_COLOR_CONFIG } from '../types/order';
+import type { ImageFile, CanvasSize, CanvasOptions } from '../types/order';
+import { useBasket } from '../contexts/BasketContext';
+import CanvasColorSelector from './CanvasColorSelector';
+import CanvasPreview from './CanvasPreview';
 import '../styles/hebrew.css';
 
 interface SizeCalculatorProps {
   imageFile: ImageFile;
-  onSizeChange: (size: CanvasSize, price: number) => void;
+  onSizeChange: (size: CanvasSize, canvasOptions: CanvasOptions, basePrice: number, totalPrice: number) => void;
+  initialSize?: CanvasSize;
+  initialOptions?: CanvasOptions;
 }
 
-const SizeCalculator = ({ imageFile, onSizeChange }: SizeCalculatorProps) => {
+const SizeCalculator = ({ imageFile, onSizeChange, initialSize, initialOptions }: SizeCalculatorProps) => {
   const [width, setWidth] = useState<number>(0);
   const [height, setHeight] = useState<number>(0);
-  const [price, setPrice] = useState<number>(0);
+  const [selectedColor, setSelectedColor] = useState<string>(CANVAS_COLOR_CONFIG.DEFAULT_COLOR);
+  const [basePrice, setBasePrice] = useState<number>(0);
+  const [totalPrice, setTotalPrice] = useState<number>(0);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
 
-  // Initialize with default size when imageFile changes
+  // Initialize with initial values or default size when imageFile changes
   useEffect(() => {
     if (imageFile) {
-      // Use cropped dimensions if available, otherwise use original
-      const aspectRatio = imageFile.croppedAspectRatio || imageFile.aspectRatio;
-      const defaultSize = calculateDefaultSize(aspectRatio);
-      setWidth(defaultSize.width);
-      setHeight(defaultSize.height);
+      if (initialSize) {
+        // Use provided initial size
+        setWidth(initialSize.width);
+        setHeight(initialSize.height);
+      } else {
+        // Use cropped dimensions if available, otherwise use original
+        const aspectRatio = imageFile.croppedAspectRatio || imageFile.aspectRatio;
+        const defaultSize = calculateDefaultSize(aspectRatio);
+        setWidth(defaultSize.width);
+        setHeight(defaultSize.height);
+      }
+      
+      if (initialOptions) {
+        setSelectedColor(initialOptions.sideColor);
+      }
     }
-  }, [imageFile]);
+  }, [imageFile, initialSize, initialOptions]);
 
-  // Calculate price and validate whenever dimensions change
+  // Calculate price and validate whenever dimensions or color change
   useEffect(() => {
     if (width > 0 && height > 0) {
       const validation = validateCanvasSize(width, height);
       setValidationErrors(validation.errors);
       
       if (validation.isValid) {
-        const newPrice = calculatePrice(width, height);
-        setPrice(newPrice);
-        onSizeChange({ width, height }, newPrice);
+        const hasColorUpgrade = selectedColor !== CANVAS_COLOR_CONFIG.DEFAULT_COLOR;
+        const priceData = calculateTotalPrice(width, height, hasColorUpgrade);
+        
+        setBasePrice(priceData.basePrice);
+        setTotalPrice(priceData.totalPrice);
+        
+        const canvasOptions: CanvasOptions = {
+          sideColor: selectedColor,
+          colorUpcharge: priceData.colorUpcharge
+        };
+        
+        onSizeChange({ width, height }, canvasOptions, priceData.basePrice, priceData.totalPrice);
       } else {
-        setPrice(0);
-        onSizeChange({ width, height }, 0);
+        setBasePrice(0);
+        setTotalPrice(0);
+        
+        const canvasOptions: CanvasOptions = {
+          sideColor: selectedColor,
+          colorUpcharge: 0
+        };
+        
+        onSizeChange({ width, height }, canvasOptions, 0, 0);
       }
     }
-  }, [width, height, onSizeChange]);
+  }, [width, height, selectedColor, onSizeChange]);
+
+  // Handle color change
+  const handleColorChange = useCallback((color: string) => {
+    setSelectedColor(color);
+  }, []);
 
   const handleWidthChange = useCallback((newWidth: number) => {
     if (isCalculating) return;
@@ -82,6 +122,11 @@ const SizeCalculator = ({ imageFile, onSizeChange }: SizeCalculatorProps) => {
     }
   }, [width, height]);
 
+  const navigate = useNavigate();
+  const { addItem, isBasketFull } = useBasket();
+
+  const isValid = validationErrors.length === 0 && width > 0 && height > 0;
+
   const resetToDefault = useCallback(() => {
     if (imageFile) {
       const defaultSize = calculateDefaultSize(imageFile.aspectRatio);
@@ -90,7 +135,36 @@ const SizeCalculator = ({ imageFile, onSizeChange }: SizeCalculatorProps) => {
     }
   }, [imageFile]);
 
-  const isValid = validationErrors.length === 0 && width > 0 && height > 0;
+  const handleAddToBasket = useCallback(() => {
+    if (!isValid || !imageFile) return;
+
+    const basketItem = {
+      image: imageFile,
+      canvasSize: { width, height },
+      canvasOptions: {
+        sideColor: selectedColor,
+        colorUpcharge: totalPrice - basePrice
+      },
+      basePrice,
+      totalPrice
+    };
+
+    const success = addItem(basketItem);
+    if (success) {
+      // Show success message and options
+      alert('הפריט נוסף לעגלה בהצלחה!');
+      // Navigate to basket or continue shopping
+      const userChoice = confirm('האם ברצונכם לעבור לעגלת הקניות או להמשיך בקנייה?\n\nלחצו "אישור" לעגלת קניות או "ביטול" להמשיך בקנייה.');
+      if (userChoice) {
+        navigate('/basket');
+      } else {
+        // Reset to allow adding another item with the same image
+        navigate('/order');
+      }
+    } else {
+      alert('לא ניתן להוסיף פריט לעגלה. ייתכן שהעגלה מלאה.');
+    }
+  }, [isValid, imageFile, width, height, selectedColor, basePrice, totalPrice, addItem, navigate]);
 
   return (
     <div style={{
@@ -256,62 +330,27 @@ const SizeCalculator = ({ imageFile, onSizeChange }: SizeCalculatorProps) => {
         <strong>הערה:</strong> השינוי באחד המימדים יתאים אוטומטית את המימד השני כדי לשמור על יחס התמונה המקורית
       </div>
 
-      {/* Action Buttons */}
-      <div style={{
-        display: 'flex',
-        gap: '1rem',
-        marginBottom: '2rem'
-      }}>
-        <button
-          onClick={resetToDefault}
-          style={{
-            flex: 1,
-            padding: '0.75rem',
-            backgroundColor: '#6b7280',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '1rem',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'background-color 0.3s ease',
-            fontFamily: 'Assistant, sans-serif'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#4b5563';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#6b7280';
-          }}
-        >
-          איפוס לגודל ברירת מחדל
-        </button>
+      {/* Canvas Color Selection - Only show if feature is enabled */}
+      {FEATURE_FLAGS.CANVAS_COLOR_SELECTION && isValid && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '1.5rem',
+          marginBottom: '2rem'
+        }}>
+          <CanvasColorSelector
+            selectedColor={selectedColor}
+            onColorChange={handleColorChange}
+            basePrice={basePrice}
+            colorUpcharge={totalPrice - basePrice}
+          />
+          <CanvasPreview
+            canvasSize={{ width, height }}
+            sideColor={selectedColor}
+          />
+        </div>
+      )}
 
-        <button
-          onClick={handleConstrainSize}
-          style={{
-            flex: 1,
-            padding: '0.75rem',
-            backgroundColor: '#f59e0b',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '1rem',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'background-color 0.3s ease',
-            fontFamily: 'Assistant, sans-serif'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#d97706';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#f59e0b';
-          }}
-        >
-          התאם לגבולות מותרים
-        </button>
-      </div>
 
       {/* Price Display */}
       <div style={{
@@ -329,22 +368,78 @@ const SizeCalculator = ({ imageFile, onSizeChange }: SizeCalculatorProps) => {
         }}>
           מחיר משוער
         </div>
-        <div style={{
-          fontSize: '2rem',
-          fontWeight: '700',
-          color: isValid ? '#16a34a' : '#6b7280'
-        }}>
-          {isValid ? formatPrice(price) : 'לא זמין'}
-        </div>
-        {!isValid && (
-          <div style={{
-            fontSize: '0.9rem',
-            color: '#6b7280',
-            marginTop: '0.5rem'
-          }}>
-            אנא תקנו את השגיאות לצפייה במחיר
-          </div>
+        
+        {isValid ? (
+          <>
+            {/* Price Breakdown - Show if color feature is enabled and color is selected */}
+            {FEATURE_FLAGS.CANVAS_COLOR_SELECTION && selectedColor !== CANVAS_COLOR_CONFIG.DEFAULT_COLOR ? (
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '1rem',
+                  color: '#6b7280',
+                  marginBottom: '0.25rem'
+                }}>
+                  <span>מחיר בסיסי:</span>
+                  <span>{formatPrice(basePrice)}</span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '1rem',
+                  color: '#f59e0b',
+                  marginBottom: '0.5rem'
+                }}>
+                  <span>תוספת צבע:</span>
+                  <span>+{formatPrice(totalPrice - basePrice)}</span>
+                </div>
+                <div style={{
+                  borderTop: '1px solid #d1d5db',
+                  paddingTop: '0.5rem'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '1.1rem',
+                    fontWeight: '600',
+                    color: '#374151'
+                  }}>
+                    <span>סה״כ:</span>
+                    <span>{formatPrice(totalPrice)}</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            
+            {/* Total Price Display */}
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: isValid ? '#16a34a' : '#6b7280'
+            }}>
+              {formatPrice(totalPrice)}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: '#6b7280'
+            }}>
+              לא זמין
+            </div>
+            <div style={{
+              fontSize: '0.9rem',
+              color: '#6b7280',
+              marginTop: '0.5rem'
+            }}>
+              אנא תקנו את השגיאות לצפייה במחיר
+            </div>
+          </>
         )}
+
       </div>
     </div>
   );

@@ -5,10 +5,11 @@ import '../styles/hebrew.css';
 
 interface ImageUploadProps {
   onImageSelected: (imageFile: ImageFile) => void;
+  onImageRemoved?: () => void;
   currentImage?: ImageFile;
 }
 
-const ImageUpload = ({ onImageSelected, currentImage }: ImageUploadProps) => {
+const ImageUpload = ({ onImageSelected, onImageRemoved, currentImage }: ImageUploadProps) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string>('');
@@ -65,10 +66,15 @@ const ImageUpload = ({ onImageSelected, currentImage }: ImageUploadProps) => {
   const removeImage = useCallback(() => {
     if (currentImage) {
       cleanupImagePreview(currentImage.preview);
-      // Reset by calling onImageSelected with a new empty image
       setError('');
+      // Call the onImageRemoved callback if provided, otherwise fallback to page reload
+      if (onImageRemoved) {
+        onImageRemoved();
+      } else {
+        window.location.reload();
+      }
     }
-  }, [currentImage]);
+  }, [currentImage, onImageRemoved]);
 
   return (
     <div style={{ width: '100%' }}>

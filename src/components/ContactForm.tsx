@@ -128,7 +128,7 @@ const ContactForm = ({ orderDetails, onSubmit, isSubmitting = false }: ContactFo
             fontWeight: '700',
             color: '#16a34a'
           }}>
-            <strong>מחיר:</strong> {formatPrice(orderDetails.price)}
+            <strong>מחיר:</strong> {formatPrice(orderDetails.totalPrice)}
           </div>
         </div>
       </div>

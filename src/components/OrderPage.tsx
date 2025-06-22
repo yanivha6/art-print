@@ -1,25 +1,65 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useBasket } from '../contexts/BasketContext';
 import ImageUpload from './ImageUpload';
 import ImageCropper from './ImageCropper';
 import SizeCalculator from './SizeCalculator';
 import ContactForm from './ContactForm';
-import type { ImageFile, CanvasSize, ContactInfo, Order } from '../types/order';
+import type { ImageFile, CanvasSize, CanvasOptions, ContactInfo, Order } from '../types/order';
 import '../styles/hebrew.css';
 
 const OrderPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { getItem, updateItem, addItem, isBasketFull } = useBasket();
+  
   const [currentStep, setCurrentStep] = useState<1 | 1.5 | 2 | 3>(1);
   const [selectedImage, setSelectedImage] = useState<ImageFile | null>(null);
   const [showCropper, setShowCropper] = useState(false);
   const [canvasSize, setCanvasSize] = useState<CanvasSize | null>(null);
-  const [price, setPrice] = useState<number>(0);
+  const [canvasOptions, setCanvasOptions] = useState<CanvasOptions | null>(null);
+  const [basePrice, setBasePrice] = useState<number>(0);
+  const [totalPrice, setTotalPrice] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Handle URL parameters for different modes
+  useEffect(() => {
+    const editItemId = searchParams.get('edit');
+    
+    if (editItemId) {
+      // Edit mode - load existing basket item
+      const basketItem = getItem(editItemId);
+      if (basketItem) {
+        setEditingItemId(editItemId);
+        setIsEditMode(true);
+        setSelectedImage(basketItem.image);
+        setCanvasSize(basketItem.canvasSize);
+        setCanvasOptions(basketItem.canvasOptions);
+        setBasePrice(basketItem.basePrice);
+        setTotalPrice(basketItem.totalPrice);
+        setCurrentStep(2); // Go directly to size selection
+      } else {
+        // Item not found, redirect to basket
+        navigate('/basket');
+      }
+    }
+  }, [searchParams, getItem, navigate]);
 
   const handleImageSelected = useCallback((imageFile: ImageFile) => {
     setSelectedImage(imageFile);
     setShowCropper(true);
     setCurrentStep(1.5);
+  }, []);
+
+  const handleImageRemoved = useCallback(() => {
+    setSelectedImage(null);
+    setCanvasSize(null);
+    setCanvasOptions(null);
+    setBasePrice(0);
+    setTotalPrice(0);
+    setCurrentStep(1);
   }, []);
 
   const handleCropComplete = useCallback((croppedImageFile: ImageFile) => {
@@ -33,31 +73,76 @@ const OrderPage = () => {
     setCurrentStep(2);
   }, []);
 
-  const handleSizeChange = useCallback((size: CanvasSize, newPrice: number) => {
+  const handleSizeChange = useCallback((size: CanvasSize, options: CanvasOptions, basePriceValue: number, totalPriceValue: number) => {
     setCanvasSize(size);
-    setPrice(newPrice);
+    setCanvasOptions(options);
+    setBasePrice(basePriceValue);
+    setTotalPrice(totalPriceValue);
   }, []);
 
+  const handleAddToBasket = useCallback(() => {
+    if (!selectedImage || !canvasSize || !canvasOptions) return;
+
+    const basketItem = {
+      image: selectedImage,
+      canvasSize,
+      canvasOptions,
+      basePrice,
+      totalPrice
+    };
+
+    const success = addItem(basketItem);
+    if (success) {
+      // Automatically navigate to basket
+      navigate('/basket');
+    } else {
+      alert('לא ניתן להוסיף פריט לעגלה. ייתכן שהעגלה מלאה.');
+    }
+  }, [selectedImage, canvasSize, canvasOptions, basePrice, totalPrice, addItem, navigate]);
+
   const handleProceedToContact = useCallback(() => {
-    if (selectedImage && canvasSize && price > 0) {
+    if (selectedImage && canvasSize && totalPrice > 0) {
       setCurrentStep(3);
     }
-  }, [selectedImage, canvasSize, price]);
+  }, [selectedImage, canvasSize, totalPrice]);
 
   const handleOrderSubmit = useCallback(async (contactInfo: ContactInfo) => {
-    if (!selectedImage || !canvasSize) return;
+    if (!selectedImage || !canvasSize || !canvasOptions) return;
 
     setIsSubmitting(true);
     
     try {
-      // In a real app, this would send the order to a backend
+      // For edit mode, update the basket item
+      if (isEditMode && editingItemId) {
+        updateItem(editingItemId, {
+          canvasSize,
+          canvasOptions,
+          basePrice,
+          totalPrice
+        });
+        
+        // Navigate back to basket after successful edit
+        navigate('/basket');
+        return;
+      }
+
+      // For single-item order (legacy mode), create a mock basket item
+      const basketItem = {
+        id: `temp-${Date.now()}`,
+        image: selectedImage,
+        canvasSize,
+        canvasOptions,
+        basePrice,
+        totalPrice,
+        quantity: 1,
+        addedAt: new Date()
+      };
+
       const order: Order = {
         id: `order-${Date.now()}`,
-        orderDetails: {
-          image: selectedImage,
-          canvasSize,
-          price
-        },
+        basketItems: [basketItem],
+        subtotal: totalPrice,
+        totalPrice,
         contactInfo,
         createdAt: new Date(),
         status: 'pending'
@@ -77,7 +162,7 @@ const OrderPage = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedImage, canvasSize, price, navigate]);
+  }, [selectedImage, canvasSize, canvasOptions, basePrice, totalPrice, navigate, isEditMode, editingItemId, updateItem]);
 
   const goBackToStep = useCallback((step: 1 | 2) => {
     setCurrentStep(step);
@@ -105,14 +190,43 @@ const OrderPage = () => {
             color: '#1e3a8a',
             marginBottom: '1rem'
           }}>
-            הזמנת הדפסה על קנבס
+            {isEditMode ? 'עריכת פריט בעגלה' : 'הזמנת הדפסה על קנבס'}
           </h1>
           <p style={{
             fontSize: '1.2rem',
             color: '#64748b'
           }}>
-            בואו ניצור יחד את יצירת האמנות הבאה שלכם
+            {isEditMode 
+              ? 'ערכו את התצורה של הפריט שלכם'
+              : 'בואו ניצור יחד את יצירת האמנות הבאה שלכם'
+            }
           </p>
+          
+          {isEditMode && (
+            <button
+              onClick={() => navigate('/basket')}
+              style={{
+                marginTop: '1rem',
+                padding: '0.5rem 1rem',
+                backgroundColor: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'background-color 0.3s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#4b5563';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#6b7280';
+              }}
+            >
+              חזרה לעגלה
+            </button>
+          )}
         </div>
 
         {/* Progress Steps */}
@@ -238,6 +352,7 @@ const OrderPage = () => {
             <div>
               <ImageUpload 
                 onImageSelected={handleImageSelected}
+                onImageRemoved={handleImageRemoved}
                 currentImage={selectedImage || undefined}
               />
             </div>
@@ -326,33 +441,78 @@ const OrderPage = () => {
                 <SizeCalculator 
                   imageFile={selectedImage}
                   onSizeChange={handleSizeChange}
+                  initialSize={isEditMode ? canvasSize || undefined : undefined}
+                  initialOptions={isEditMode ? canvasOptions || undefined : undefined}
                 />
                 
-                {canvasSize && price > 0 && (
-                  <button
-                    onClick={handleProceedToContact}
-                    style={{
-                      width: '100%',
-                      padding: '1rem',
-                      marginTop: '1rem',
-                      backgroundColor: '#16a34a',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '12px',
-                      fontSize: '1.2rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'background-color 0.3s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#15803d';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = '#16a34a';
-                    }}
-                  >
-                    המשך לפרטי הזמנה
-                  </button>
+                {canvasSize && totalPrice > 0 && (
+                  isEditMode ? (
+                    <button
+                      onClick={() => {
+                        if (editingItemId && canvasSize && canvasOptions) {
+                          updateItem(editingItemId, {
+                            image: selectedImage, // Update image if changed
+                            canvasSize,
+                            canvasOptions,
+                            basePrice,
+                            totalPrice
+                          });
+                          navigate('/basket');
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '1rem',
+                        marginTop: '1rem',
+                        backgroundColor: '#f59e0b',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontSize: '1.2rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#d97706';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f59e0b';
+                      }}
+                    >
+                      עדכן פריט
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleAddToBasket}
+                      disabled={isBasketFull}
+                      style={{
+                        width: '100%',
+                        padding: '1rem',
+                        marginTop: '1rem',
+                        backgroundColor: isBasketFull ? '#9ca3af' : '#16a34a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontSize: '1.2rem',
+                        fontWeight: '600',
+                        cursor: isBasketFull ? 'not-allowed' : 'pointer',
+                        transition: 'background-color 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isBasketFull) {
+                          e.currentTarget.style.backgroundColor = '#15803d';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isBasketFull) {
+                          e.currentTarget.style.backgroundColor = '#16a34a';
+                        }
+                      }}
+                    >
+                      {isBasketFull ? 'העגלה מלאה' : 'הוסף לעגלה'}
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -461,7 +621,9 @@ const OrderPage = () => {
                 orderDetails={{
                   image: selectedImage,
                   canvasSize,
-                  price
+                  canvasOptions: canvasOptions!,
+                  basePrice,
+                  totalPrice
                 }}
                 onSubmit={handleOrderSubmit}
                 isSubmitting={isSubmitting}

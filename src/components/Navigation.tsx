@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import BasketIcon from './BasketIcon';
 import '../styles/hebrew.css';
 
 const Navigation = () => {
@@ -32,8 +33,8 @@ const Navigation = () => {
           ארט פרניט
         </Link>
 
-        {/* Navigation Links */}
-        <div style={{ display: 'flex', gap: '2rem' }}>
+        {/* Navigation Links and Basket */}
+        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
           <Link
             to="/"
             style={{
@@ -60,6 +61,7 @@ const Navigation = () => {
           >
             הזמנה
           </Link>
+          <BasketIcon />
         </div>
       </div>
     </nav>
